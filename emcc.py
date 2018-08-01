@@ -1384,8 +1384,8 @@ There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR P
           args += ['-o', specified_target]
         args = system_libs.process_args(args, shared.Settings)
         logging.debug("running (for precompiled headers): " + call + ' ' + ' '.join(args))
-        execute([call] + args) # let compiler frontend print directly, so colors are saved (PIPE kills that)
-        sys.exit(0)
+        ret = execute([call] + args) # let compiler frontend print directly, so colors are saved (PIPE kills that)
+        sys.exit(ret)
 
       def get_bitcode_file(input_file):
         if final_suffix not in JS_CONTAINING_SUFFIXES:
