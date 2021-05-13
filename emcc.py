@@ -69,7 +69,11 @@ def run(cmd):
   if len(cmd) > 10:
     cmd = cmd[:2] + ['@' + create_response_file(cmd[2:])]
   env = os.environ.copy()
-  env['EM_CONFIG'] = env['EM_CONFIG'] + '.2'
+
+  redirected_emconfig = env['EM_CONFIG'] + '.2'
+  if os.path.isfile(redirected_emconfig):
+    env['EM_CONFIG'] = redirected_emconfig
+
   proc = subprocess.run(cmd, env=env)
   return proc.returncode
 
