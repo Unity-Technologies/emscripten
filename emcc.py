@@ -98,7 +98,7 @@ if output and output.endswith('.bc'):
   if returncode == 0:
     shutil.move(a_output, output)
 else:
-  cmd = [sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), 'emcc_2.py')] + sys.argv[1:] + (['-o', output] if output else [])
+  cmd = [sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), 'emcc2.py')] + sys.argv[1:] + (['-o', output] if output else [])
   if output and output.endswith('.js'):
     cmd += ['-lidbfs.js']
   returncode = run(cmd)
