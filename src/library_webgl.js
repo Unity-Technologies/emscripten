@@ -1992,6 +1992,7 @@ var LibraryGL = {
   },
 
   $emscriptenWebGLGetUniform__docs: '/** @suppress{checkTypes} */', // This function intentionally assigns `HEAP32[x] = someBoolean;` Don't let Closure mind about that.
+  $emscriptenWebGLGetUniform__deps: ['$webglGetUniformLocation'],
   $emscriptenWebGLGetUniform: function(program, location, params, type) {
     if (!params) {
       // GLES2 specification does not specify how to behave if params is a null pointer. Since calling this function does not make sense
@@ -2007,7 +2008,7 @@ var LibraryGL = {
     GL.validateGLObjectID(program.uniformLocsById, location, 'glGetUniform*v', 'location');
 #endif
     program = GL.programs[program];
-    var data = GLctx.getUniform(program, program.uniformLocsById[location]);
+    var data = GLctx.getUniform(program, webglGetUniformLocation(location));
     if (typeof data == 'number' || typeof data == 'boolean') {
       switch (type) {
         case {{{ cDefine('EM_FUNC_SIG_PARAM_I') }}}: {{{ makeSetValue('params', '0', 'data', 'i32') }}}; break;
@@ -2059,7 +2060,7 @@ var LibraryGL = {
 
       // If an integer, we have not yet bound the location, so do it now. The integer value specifies the array index
       // we should bind to.
-      if (webglLoc >= 0) {
+      if (typeof webglLoc === 'number') {
         p.uniformLocsById[location] = webglLoc = GLctx.getUniformLocation(p, p.uniformArrayNamesById[location] + (webglLoc > 0 ? '[' + webglLoc + ']' : ''));
       }
       // Else an already cached WebGLUniformLocation, return it.
