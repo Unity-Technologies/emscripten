@@ -46,7 +46,10 @@ mergeInto(LibraryManager.library, {
         assert(args.length == 1);
 #endif
         return defs[args[0]] ? 1 : 0;
-      }
+      },
+      'GL_FRAGMENT_PRECISION_HIGH': function() {
+        return 1;
+      },
     };
 
     // Returns true if str[i] is whitespace.
