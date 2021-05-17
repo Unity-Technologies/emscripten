@@ -83,6 +83,14 @@ for i in range(len(sys.argv)):
     sys.argv = sys.argv[:i] + sys.argv[i+2:]
     break
 
+# Remove LTO
+i = 0
+while i < len(sys.argv):
+  if sys.argv[i] == '-flto':
+    sys.argv = sys.argv[:i] + sys.argv[i+1:]
+  else:
+    i += 1
+
 # Reroute all nonexisting .bc inputs to .a inputs if they exist:
 for i in range(len(sys.argv)):
   if get_suffix(sys.argv[i]) == '.bc':
