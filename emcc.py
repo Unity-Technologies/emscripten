@@ -98,10 +98,14 @@ for i in range(len(sys.argv)):
     if not os.path.isfile(sys.argv[i]) and os.path.isfile(a_file):
       sys.argv[i] = a_file
     elif os.path.isfile(sys.argv[i]):
-      tempname = tempfile.NamedTemporaryFile(suffix=get_filename_without_path(a_file)).name
-      shutil.copy(sys.argv[i], tempname)
-      sys.argv[i] = tempname
-      tempfiles += [tempname]
+      # Only rename .bc input to .a if not actually a BC file
+      with open(sys.argv[i], "rb") as f:
+        is_bc_file = f.read(2) == b"BC"
+      if not is_bc_file:
+        tempname = tempfile.NamedTemporaryFile(suffix=get_filename_without_path(a_file)).name
+        shutil.copy(sys.argv[i], tempname)
+        sys.argv[i] = tempname
+        tempfiles += [tempname]
 
 if output and output.endswith('.bc'):
   a_output = output.replace('.bc', '.a')
