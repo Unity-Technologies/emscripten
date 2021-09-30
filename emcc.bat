@@ -11,16 +11,19 @@
   set EM_PY=python
 )
 
-@set ARGS=%*
-@if "%_EMCC_CCACHE%"=="" (
-  :: Do regular invocation of em++.py compiler
+:: If _EMCC_CCACHE is not defined below, do a regular invocation of em++.py compiler.
 :: Python Windows bug https://bugs.python.org/issue34780: If emcc.bat was invoked via a
 :: shared stdin handle from the parent process, and that parent process stdin handle is in
 :: a certain state, running python.exe might hang here. To work around this, invoke python
 :: with '< NUL' stdin to avoid sharing the parent's stdin handle to it, avoiding the hang.
+
+:: in the else branch when EMCC_CCACHE is enabled,
+:: remove the ccache env. var, invoke ccache and re-enter this script to take the above branch.
+
+@set ARGS=%*
+@if "%_EMCC_CCACHE%"=="" (
   "%EM_PY%" "%~dp0\%~n0.py" !ARGS! < NUL
 ) else (
-  :: Remove the ccache env. var, invoke ccache and re-enter this script to take the above branch.
   set _EMCC_CCACHE=
   ccache "%~dp0\%~n0.bat" !ARGS! < NUL
 )
