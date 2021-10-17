@@ -14,6 +14,39 @@ import sys
 from tools import shared
 
 
+### XXX Unity local workaround to make llvm-ar "rcL" behave like a "qcL" option (https://bugs.llvm.org/show_bug.cgi?id=52197)
+# (we never need a qcL option)
+# Possibly helps with https://fogbugz.unity3d.com/f/cases/1371445/
+import shlex, os
+def read_response_file(response_filename):
+  with open(response_filename) as f:
+    args = f.read()
+  return shlex.split(args)
+
+def substitute_response_files(args):
+  new_args = []
+  for arg in args:
+    if arg.startswith('@'):
+      new_args += read_response_file(arg[1:])
+    else:
+      new_args.append(arg)
+  return new_args
+
+if sys.argv[1] == 'qcL':
+  argv = substitute_response_files(sys.argv)
+  if os.path.isfile(argv[2]):
+    try:
+      os.remove(argv[2])
+    except:
+      pass
+### XXX End Unity local workaround
+
+
+
+
+
+
+
 #
 # Main run() function
 #
