@@ -70,9 +70,10 @@ def run(cmd):
     cmd = cmd[:2] + ['@' + create_response_file(cmd[2:])]
   env = os.environ.copy()
 
-  redirected_emconfig = env['EM_CONFIG'] + '.2'
-  if os.path.isfile(redirected_emconfig):
-    env['EM_CONFIG'] = redirected_emconfig
+  if not os.environ.get('_UNITY_SKIP_REDIRECT_EMCONFIG'):
+    redirected_emconfig = env['EM_CONFIG'] + '.2'
+    if os.path.isfile(redirected_emconfig):
+      env['EM_CONFIG'] = redirected_emconfig
 
   proc = subprocess.run(cmd, env=env)
   return proc.returncode
@@ -84,38 +85,58 @@ for i in range(len(sys.argv)):
     break
 
 # Remove LTO
-i = 0
-while i < len(sys.argv):
-  if sys.argv[i] == '-flto':
-    sys.argv = sys.argv[:i] + sys.argv[i+1:]
-  else:
-    i += 1
+if not os.environ.get('_UNITY_SKIP_REMOVE_LTO'):
+  i = 0
+  while i < len(sys.argv):
+    if sys.argv[i] == '-flto':
+      sys.argv = sys.argv[:i] + sys.argv[i+1:]
+    else:
+      i += 1
 
-# Reroute all nonexisting .bc inputs to .a inputs if they exist:
-for i in range(len(sys.argv)):
-  if get_suffix(sys.argv[i]) == '.bc':
-    a_file = replace_suffix(sys.argv[i], '.a')
-    if not os.path.isfile(sys.argv[i]) and os.path.isfile(a_file):
-      sys.argv[i] = a_file
-    elif os.path.isfile(sys.argv[i]):
-      # Only rename .bc input to .a if not actually a BC file
-      with open(sys.argv[i], "rb") as f:
-        is_bc_file = f.read(2) == b"BC"
-      if not is_bc_file:
-        tempname = tempfile.NamedTemporaryFile(suffix=get_filename_without_path(a_file)).name
-        shutil.copy(sys.argv[i], tempname)
-        sys.argv[i] = tempname
-        tempfiles += [tempname]
+# Reroute all nonexisting .bc inputs to .a inputs (and vice versa) if they exist:
+if not os.environ.get('_UNITY_SKIP_RENAME_A_BC'):
+  for i in range(len(sys.argv)):
+    if get_suffix(sys.argv[i]) == '.bc':
+      a_file = replace_suffix(sys.argv[i], '.a')
+      if not os.path.isfile(sys.argv[i]) and os.path.isfile(a_file):
+        sys.argv[i] = a_file
+      elif os.path.isfile(sys.argv[i]):
+        # Only rename .bc input to .a if not actually a BC file
+        with open(sys.argv[i], "rb") as f:
+          is_bc_file = f.read(2) == b"BC"
+        if not is_bc_file:
+          tempname = tempfile.NamedTemporaryFile(suffix=get_filename_without_path(a_file)).name
+          shutil.copy(sys.argv[i], tempname)
+          sys.argv[i] = tempname
+          tempfiles += [tempname]
+    elif get_suffix(sys.argv[i]) == '.a': # Reroute all .a inputs to .bc inputs if they exist.
+      a_file = sys.argv[i]
+      bc_file = replace_suffix(sys.argv[i], '.bc')
+      if not os.path.isfile(sys.argv[i]) and os.path.isfile(bc_file):
+        sys.argv[i] = bc_file
 
-if output and output.endswith('.bc'):
+      if os.path.isfile(sys.argv[i]):
+        # Copy the input file with .bc suffix to an input with suffix .a to not confuse emcc.
+        with open(sys.argv[i], "rb") as f:
+          is_bc_file = f.read(2) == b"BC"
+        if not is_bc_file:
+          tempname = tempfile.NamedTemporaryFile(suffix=get_filename_without_path(a_file)).name
+          shutil.copy(sys.argv[i], tempname)
+          sys.argv[i] = tempname
+          tempfiles += [tempname]
+
+if output and output.endswith('.bc') and not os.environ.get('_UNITY_SKIP_CALL_EMAR_FROM_EMCC'):
   a_output = output.replace('.bc', '.a')
+  # Delete previous .a file if exists, since qcL command below is set to append to existing file.
+  if os.path.isfile(a_output):
+    os.remove(a_output)
   cmd = [sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), 'emar.py'), 'qcL', a_output] + sys.argv[1:]
   returncode = run(cmd)
   if returncode == 0:
     shutil.move(a_output, output)
 else:
   cmd = [sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), 'emcc2.py')] + sys.argv[1:] + (['-o', output] if output else [])
-  if output and output.endswith('.js'):
+  if output and output.endswith('.js') and not os.environ.get('_UNITY_SKIP_INJECT_IDBFS'):
     cmd += ['-lidbfs.js']
   returncode = run(cmd)
 
