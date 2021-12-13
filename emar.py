@@ -3,7 +3,7 @@
 import os, sys, subprocess, shutil, ntpath, tempfile, shlex
 
 def read_response_file(response_filename):
-  with open(response_filename) as f:
+  with open(response_filename, 'r', encoding='utf-8') as f:
     args = f.read()
   return shlex.split(args)
 
@@ -36,7 +36,7 @@ def replace_suffix(f, new_suffix):
 tempfiles = []
 
 def create_response_file(args):
-  response_fd, response_filename = tempfile.mkstemp(suffix='.rsp', text=True)
+  response_fd, response_filename = tempfile.mkstemp(suffix='.rsp.utf-8', text=True)
 
   WINDOWS = (os.name == 'nt')
 
@@ -53,7 +53,7 @@ def create_response_file(args):
     if ' ' in arg:
       arg = '"%s"' % arg
     contents += arg + '\n'
-  with os.fdopen(response_fd, 'w', encoding='utf-8' if WINDOWS else None) as f:
+  with os.fdopen(response_fd, 'w', encoding='utf-8') as f:
     f.write(contents)
 
   global tempfiles
