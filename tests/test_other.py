@@ -10466,3 +10466,540 @@ exec "$@"
     ''')
     self.run_process([EMCC, 'get.c', '-s', 'ALLOW_MEMORY_GROWTH', arg])
     self.assertContained(f'max: |{expected}|', self.run_js('a.out.js'))
+
+  def test_auto_ptr_cxx17(self):
+    # Test that its still possible to use auto_ptr, even in C++17
+    self.do_other_test('test_auto_ptr_cxx17.cpp', emcc_args=[
+      '-std=c++17',
+      '-D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR',
+      '-Wno-deprecated-declarations'])
+
+  def test_special_chars_in_arguments(self):
+    # We had some regressions where the windows `.bat` files that run the compiler
+    # driver were failing to accept certain special characters such as `(`, `)` and `!`.
+    # See https://github.com/emscripten-core/emscripten/issues/14063
+    create_file('test(file).c', 'int main() { return 0; }')
+    create_file('test!.c', 'int main() { return 0; }')
+    self.run_process([EMCC, 'test(file).c'])
+    self.run_process([EMCC, 'test!.c'])
+
+  @no_windows('relies on a shell script')
+  def test_report_subprocess_signals(self):
+    # Test that when subprocess is killed by signal we report the signal name
+    create_file('die.sh', '''\
+#!/bin/sh
+kill -9 $$
+    ''')
+    make_executable('die.sh')
+    with env_modify({'EM_COMPILER_WRAPPER': './die.sh'}):
+      err = self.expect_fail([EMCC, test_file('hello_world.c')])
+      self.assertContained('failed (received SIGKILL (-9))', err)
+
+  def test_concepts(self):
+    self.do_runf(test_file('other/test_concepts.cpp'), '', emcc_args=['-std=c++20'])
+
+  def test_std_cmp(self):
+    self.do_runf(test_file('other/test_std_cmp.cpp'), '', emcc_args=['-std=c++20'])
+
+  def test_link_only_setting_warning(self):
+    err = self.run_process([EMCC, '-sALLOW_MEMORY_GROWTH', '-c', test_file('hello_world.c')], stderr=PIPE).stderr
+    self.assertContained("warning: linker setting ignored during compilation: 'ALLOW_MEMORY_GROWTH' [-Wunused-command-line-argument]", err)
+
+  def test_link_only_flag_warning(self):
+    err = self.run_process([EMCC, '--embed-file', 'file', '-c', test_file('hello_world.c')], stderr=PIPE).stderr
+    self.assertContained("warning: linker flag ignored during compilation: '--embed-file' [-Wunused-command-line-argument]", err)
+
+  def test_compile_only_flag_warning(self):
+    err = self.run_process([EMCC, '--default-obj-ext', 'foo', test_file('hello_world.c')], stderr=PIPE).stderr
+    self.assertContained("warning: compiler flag ignored during linking: '--default-obj-ext' [-Wunused-command-line-argument]", err)
+
+  def test_no_deprecated(self):
+    # Test that -Wno-deprecated is passed on to clang driver
+    create_file('test.c', '''\
+        __attribute__((deprecated)) int foo();
+        int main() { return foo(); }
+    ''')
+    err = self.expect_fail([EMCC, '-c', '-Werror', 'test.c'])
+    self.assertContained("error: 'foo' is deprecated", err)
+    self.run_process([EMCC, '-c', '-Werror', '-Wno-deprecated', 'test.c'])
+
+  def test_bad_export_name(self):
+    err = self.expect_fail([EMCC, '-sEXPORT_NAME=foo bar', test_file('hello_world.c')])
+    self.assertContained('error: EXPORT_NAME is not a valid JS identifier: `foo bar`', err)
+
+  def test_offset_convertor_plus_wasm2js(self):
+    err = self.expect_fail([EMCC, '-sUSE_OFFSET_CONVERTER', '-s', 'WASM=0', test_file('hello_world.c')])
+    self.assertContained('wasm2js is not compatible with USE_OFFSET_CONVERTER', err)
+
+  def test_standard_library_mapping(self):
+    # Test the `-l` flags on the command line get mapped the correct libraries variant
+    self.run_process([EMBUILDER, 'build', 'libc-mt-debug', 'libcompiler_rt-mt', 'libdlmalloc-mt'])
+
+    libs = ['-lc', '-lc_rt', '-lcompiler_rt', '-lmalloc']
+    err = self.run_process([EMCC, test_file('hello_world.c'), '-pthread', '-nostdlib', '-v'] + libs, stderr=PIPE).stderr
+
+    # Check the the linker was run with `-mt` variants because `-pthread` was passed.
+    self.assertContained(' -lc-mt-debug ', err)
+    self.assertContained(' -ldlmalloc-mt ', err)
+    self.assertContained(' -lcompiler_rt-mt ', err)
+
+  def test_explict_gl_linking(self):
+    # Test that libGL can be linked explictly via `-lGL` rather than implictly.
+    # Here we use NO_AUTO_NATIVE_LIBRARIES to disable the implictly linking that normally
+    # includes the native GL library.
+    self.run_process([EMCC, test_file('other/test_explict_gl_linking.c'), '-sNO_AUTO_NATIVE_LIBRARIES', '-lGL'])
+
+  def test_no_main_with_PROXY_TO_PTHREAD(self):
+    create_file('lib.cpp', r'''
+#include <emscripten.h>
+EMSCRIPTEN_KEEPALIVE
+void foo() {}
+''')
+    err = self.expect_fail([EMCC, 'lib.cpp', '-pthread', '-sPROXY_TO_PTHREAD'])
+    self.assertContained('emcc: error: PROXY_TO_PTHREAD proxies main() for you, but no main exists', err)
+
+  def test_archive_bad_extension(self):
+    # Regression test for https://github.com/emscripten-core/emscripten/issues/14012
+    # where llvm_nm_multiple would be confused by archives names like object files.
+    create_file('main.c', '''
+    #include <sys/socket.h>
+    int main() {
+       return (int)(long)&accept;
+    }
+    ''')
+
+    self.run_process([EMCC, '-c', 'main.c'])
+    self.run_process([EMAR, 'crs', 'libtest.bc', 'main.o'])
+    self.run_process([EMCC, 'libtest.bc', 'libtest.bc'])
+
+  def test_split_dwarf_implicit_compile(self):
+    # Verify that the dwo file is generated in the current working directory, even when implicitly
+    # compiling (compile+link).
+    self.run_process([EMCC, test_file('hello_world.c'), '-g', '-gsplit-dwarf'])
+    self.assertExists('hello_world.dwo')
+
+  @parameterized({
+    '': [[]],
+    'strict': [['-sSTRICT']],
+    'no_allow': [['-sALLOW_UNIMPLEMENTED_SYSCALLS=0']],
+  })
+  def test_unimplemented_syscalls(self, args):
+    create_file('main.c', '''
+    #include <assert.h>
+    #include <errno.h>
+    #include <sys/mman.h>
+
+    int main() {
+      assert(mincore(0, 0, 0) == -1);
+      assert(errno == ENOSYS);
+      return 0;
+    }
+    ''')
+    cmd = [EMCC, 'main.c', '-sASSERTIONS'] + args
+    if args:
+      err = self.expect_fail(cmd)
+      self.assertContained('error: undefined symbol: __syscall_mincore', err)
+    else:
+      self.run_process(cmd)
+      err = self.run_js('a.out.js')
+      self.assertContained('warning: unsupported syscall: __syscall_mincore', err)
+
+      # Setting ASSERTIONS=0 should avoid the runtime warning
+      self.run_process(cmd + ['-sASSERTIONS=0'])
+      err = self.run_js('a.out.js')
+      self.assertNotContained('warning: unsupported syscall', err)
+
+  @require_v8
+  def test_missing_shell_support(self):
+    # By default shell support is not included
+    self.run_process([EMCC, test_file('hello_world.c')])
+    err = self.run_js('a.out.js', assert_returncode=NON_ZERO)
+    self.assertContained('shell environment detected but not enabled at build time.', err)
+
+  def test_removed_runtime_function(self):
+    create_file('post.js', 'alignMemory(100, 4);')
+    self.run_process([EMCC, test_file('hello_world.c'), '--post-js=post.js'])
+    err = self.run_js('a.out.js', assert_returncode=NON_ZERO)
+    self.assertContained('`alignMemory` is now a library function and not included by default; add it to your library.js __deps or to DEFAULT_LIBRARY_FUNCS_TO_INCLUDE on the command line', err)
+
+  # Tests that it is possible to hook into/override a symbol defined in a system library.
+  def test_override_system_js_lib_symbol(self):
+    # This test verifies it is possible to override a symbol from WebGL library.
+
+    # When WebGL is implicitly linked in, the implicit linking should happen before any user
+    # --js-libraries, so that they can adjust the behavior afterwards.
+    self.do_run_in_out_file_test(test_file('test_override_system_js_lib_symbol.c'), emcc_args=['--js-library', test_file('test_override_system_js_lib_symbol.js'), '-sMAX_WEBGL_VERSION=2'])
+
+    # When WebGL is explicitly linked to in strict mode, the linking order on command line should enable overriding.
+    self.emcc_args += ['-sAUTO_JS_LIBRARIES=0', '-sMAX_WEBGL_VERSION=2', '-lwebgl.js', '--js-library', test_file('test_override_system_js_lib_symbol.js')]
+    self.do_run_in_out_file_test(test_file('test_override_system_js_lib_symbol.c'))
+
+  @node_pthreads
+  def test_pthread_lsan_no_leak(self):
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('EXIT_RUNTIME')
+    self.emcc_args += ['-gsource-map']
+    self.do_run_in_out_file_test(test_file('pthread/test_pthread_lsan_no_leak.cpp'), emcc_args=['-fsanitize=leak'])
+    self.do_run_in_out_file_test(test_file('pthread/test_pthread_lsan_no_leak.cpp'), emcc_args=['-fsanitize=address'])
+
+  @node_pthreads
+  def test_pthread_lsan_leak(self):
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('EXIT_RUNTIME')
+    self.add_pre_run("Module['LSAN_OPTIONS'] = 'exitcode=0'")
+    self.emcc_args += ['-gsource-map']
+    expected = [
+      'Direct leak of 3432 byte(s) in 1 object(s) allocated from',
+      'test_pthread_lsan_leak.cpp:18:17',
+      'Direct leak of 2048 byte(s) in 1 object(s) allocated from',
+      'test_pthread_lsan_leak.cpp:36:10',
+      'Direct leak of 1337 byte(s) in 1 object(s) allocated from',
+      'test_pthread_lsan_leak.cpp:30:16',
+      'Direct leak of 1234 byte(s) in 1 object(s) allocated from',
+      'test_pthread_lsan_leak.cpp:20:13',
+      'Direct leak of 420 byte(s) in 1 object(s) allocated from',
+      'test_pthread_lsan_leak.cpp:31:13',
+      'Direct leak of 42 byte(s) in 1 object(s) allocated from',
+      'test_pthread_lsan_leak.cpp:13:21',
+      'test_pthread_lsan_leak.cpp:35:3',
+      '8513 byte(s) leaked in 6 allocation(s).',
+    ]
+    self.do_runf(test_file('pthread/test_pthread_lsan_leak.cpp'), expected, assert_all=True, emcc_args=['-fsanitize=leak'])
+    self.do_runf(test_file('pthread/test_pthread_lsan_leak.cpp'), expected, assert_all=True, emcc_args=['-fsanitize=address'])
+
+  @node_pthreads
+  def test_pthread_js_exception(self):
+    # Ensure that JS exceptions propagate back to the main main thread and cause node
+    # to exit with an error.
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('EXIT_RUNTIME')
+    self.build(test_file('other/test_pthread_js_exception.c'))
+    err = self.run_js('test_pthread_js_exception.js', assert_returncode=NON_ZERO)
+    self.assertContained('missing is not defined', err)
+
+  def test_config_closure_compiler(self):
+    self.run_process([EMCC, test_file('hello_world.c'), '--closure=1'])
+    with env_modify({'EM_CLOSURE_COMPILER': sys.executable}):
+      err = self.expect_fail([EMCC, test_file('hello_world.c'), '--closure=1'])
+    self.assertContained('closure compiler', err)
+    self.assertContained(sys.executable, err)
+    self.assertContained('not execute properly!', err)
+
+  def test_node_unhandled_rejection(self):
+    create_file('pre.js', '''
+    async function foo() {
+      var a = missing;
+    }
+    async function doReject() {
+      return foo();
+    }
+    ''')
+    create_file('main.c', '''
+    #include <emscripten.h>
+
+    int main() {
+      EM_ASM(setTimeout(doReject, 0));
+      emscripten_exit_with_live_runtime();
+      __builtin_trap();
+    }
+    ''')
+
+    # With NODEJS_CATCH_REJECTION we expect the unhandled rejection to cause a non-zero
+    # exit code and log the stack trace correctly.
+    self.run_process([EMCC, '--pre-js=pre.js', '-sNODEJS_CATCH_REJECTION=1', 'main.c'])
+    output = self.run_js('a.out.js', assert_returncode=NON_ZERO)
+    self.assertContained('ReferenceError: missing is not defined', output)
+    self.assertContained('at foo (', output)
+
+    version = self.run_process(config.NODE_JS + ['--version'], stdout=PIPE).stdout.strip()
+    version = [int(v) for v in version.replace('v', '').replace('-pre', '').split('.')]
+    if version[0] >= 15:
+      self.skipTest('old behaviour of node JS cannot be tested on node v15 or above')
+
+    # Without NODEJS_CATCH_REJECTION we expect node to log the unhandled rejection
+    # but return 0.
+    self.node_args = [a for a in self.node_args if '--unhandled-rejections' not in a]
+    self.run_process([EMCC, '--pre-js=pre.js', '-sNODEJS_CATCH_REJECTION=0', 'main.c'])
+    output = self.run_js('a.out.js')
+    self.assertContained('ReferenceError: missing is not defined', output)
+    self.assertContained('at foo (', output)
+
+  @node_pthreads
+  def test_default_pthread_stack_size(self):
+    self.do_runf(test_file('other/test_default_pthread_stack_size.c'))
+    self.emcc_args.append('-sUSE_PTHREADS')
+    self.do_runf(test_file('other/test_default_pthread_stack_size.c'))
+
+  def test_emscripten_set_immediate(self):
+    self.do_runf(test_file('emscripten_set_immediate.c'))
+
+  def test_emscripten_set_immediate_loop(self):
+    self.do_runf(test_file('emscripten_set_immediate_loop.c'))
+
+  @node_pthreads
+  def test_pthread_trap(self):
+    # TODO(https://github.com/emscripten-core/emscripten/issues/15161):
+    # Make this work without PROXY_TO_PTHREAD
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('EXIT_RUNTIME')
+    self.emcc_args += ['--profiling-funcs']
+    output = self.do_runf(test_file('pthread/test_pthread_trap.c'), assert_returncode=NON_ZERO)
+    self.assertContained('sent an error!', output)
+    self.assertContained('at thread_main', output)
+
+  @node_pthreads
+  def test_emscripten_set_interval(self):
+    self.do_runf(test_file('emscripten_set_interval.c'), args=['-s', 'USE_PTHREADS', '-s', 'PROXY_TO_PTHREAD'])
+
+  # Test emscripten_console_log(), emscripten_console_warn() and emscripten_console_error()
+  def test_emscripten_console_log(self):
+    self.do_run_in_out_file_test(test_file('emscripten_console_log.c'), emcc_args=['--pre-js', test_file('emscripten_console_log_pre.js')])
+
+  # Tests emscripten_unwind_to_js_event_loop() behavior
+  def test_emscripten_unwind_to_js_event_loop(self, *args):
+    self.do_runf(test_file('test_emscripten_unwind_to_js_event_loop.c'))
+
+  @node_pthreads
+  def test_emscripten_set_timeout(self):
+    self.do_runf(test_file('emscripten_set_timeout.c'), args=['-s', 'USE_PTHREADS', '-s', 'PROXY_TO_PTHREAD'])
+
+  @node_pthreads
+  def test_emscripten_set_timeout_loop(self):
+    self.do_runf(test_file('emscripten_set_timeout_loop.c'), args=['-s', 'USE_PTHREADS', '-s', 'PROXY_TO_PTHREAD'])
+
+  # Verify that we are able to successfully compile a script when the Windows 7
+  # and Python workaround env. vars are enabled.
+  # See https://bugs.python.org/issue34780
+  @with_env_modify({'EM_WORKAROUND_PYTHON_BUG_34780': '1',
+                    'EM_WORKAROUND_WIN7_BAD_ERRORLEVEL_BUG': '1'})
+  def test_windows_batch_script_workaround(self):
+    self.run_process([EMCC, test_file('hello_world.c')])
+    self.assertExists('a.out.js')
+
+  @node_pthreads
+  def test_pthread_out_err(self):
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('EXIT_RUNTIME')
+    self.do_other_test('test_pthread_out_err.c')
+
+  @node_pthreads
+  def test_pthread_icu(self):
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('USE_ICU')
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('EXIT_RUNTIME')
+    self.do_other_test('test_pthread_icu.cpp')
+
+  # unistd tests
+
+  def test_unistd_confstr(self):
+    self.do_run_in_out_file_test('unistd/confstr.c')
+
+  def test_unistd_ttyname(self):
+    self.do_runf(test_file('unistd/ttyname.c'), 'success')
+
+  def test_unistd_pathconf(self):
+    self.do_run_in_out_file_test('unistd/pathconf.c')
+
+  def test_unistd_swab(self):
+    self.do_run_in_out_file_test('unistd/swab.c')
+
+  def test_unistd_isatty(self):
+    self.do_runf(test_file('unistd/isatty.c'), 'success')
+
+  def test_unistd_login(self):
+    self.do_run_in_out_file_test('unistd/login.c')
+
+  def test_unistd_sleep(self):
+    self.do_run_in_out_file_test('unistd/sleep.c')
+
+  def test_unistd_fstatfs(self):
+    self.do_run_in_out_file_test('unistd/fstatfs.c')
+
+  # WASMFS tests
+
+  # TODO: This test will only work with the new file system.
+  # Addresses this issue: https://github.com/emscripten-core/emscripten/issues/4017
+  # The new file system also correctly identifies errors that the JS file system missed.
+  def test_wasmfs_dup(self):
+    self.set_setting('WASMFS')
+    self.do_run_in_out_file_test('wasmfs/wasmfs_dup.c')
+
+  @also_with_wasmfs
+  def test_unistd_open(self):
+    self.do_run_in_out_file_test('wasmfs/wasmfs_open.c')
+
+  @also_with_wasmfs
+  def test_unistd_stat(self):
+    self.do_runf(test_file('wasmfs/wasmfs_stat.c'))
+
+  @also_with_wasmfs
+  def test_unistd_create(self):
+    self.set_setting('WASMFS')
+    self.do_run_in_out_file_test('wasmfs/wasmfs_create.c')
+
+  @also_with_wasmfs
+  def test_unistd_seek(self):
+    self.do_run_in_out_file_test('wasmfs/wasmfs_seek.c')
+
+  @also_with_wasmfs
+  def test_unistd_mkdir(self):
+    self.do_run_in_out_file_test('wasmfs/wasmfs_mkdir.c')
+
+  @also_with_wasmfs
+  def test_unistd_cwd(self):
+    self.do_run_in_out_file_test('wasmfs/wasmfs_chdir.c')
+
+  def test_wasmfs_getdents(self):
+    # TODO: update this test when /dev has been filled out.
+    # Run only in WASMFS for now.
+    self.set_setting('WASMFS')
+    self.do_run_in_out_file_test('wasmfs/wasmfs_getdents.c')
+
+  def test_wasmfs_readfile(self):
+    self.set_setting('WASMFS')
+    self.do_run_in_out_file_test(test_file('wasmfs/wasmfs_readfile.c'))
+
+  def test_wasmfs_jsfile(self):
+    self.set_setting('WASMFS')
+    self.do_run_in_out_file_test('wasmfs/wasmfs_jsfile.c')
+
+  @node_pthreads
+  def test_wasmfs_jsfile_proxying_backend(self):
+    self.emcc_args.append('-DPROXYING')
+    self.set_setting('USE_PTHREADS')
+    self.set_setting('PROXY_TO_PTHREAD')
+    self.set_setting('EXIT_RUNTIME')
+    self.test_wasmfs_jsfile()
+
+  @disabled('Running with initial >2GB heaps is not currently supported on the CI version of Node')
+  def test_hello_world_above_2gb(self):
+    self.run_process([EMCC, test_file('hello_world.c'), '-sGLOBAL_BASE=2147483648', '-sINITIAL_MEMORY=3GB'])
+    self.assertContained('hello, world!', self.run_js('a.out.js'))
+
+  def test_hello_function(self):
+    # hello_function.cpp is referenced/used in the docs.  This test ensures that it
+    # at least compiles.
+    # (It seems odd that we ship the entire tests/ directory to all our users and
+    # reference them in our docs.  Should we move this file to somewhere else such
+    # as `examples/`?)
+    self.run_process([EMCC, test_file('hello_function.cpp'), '-o', 'function.html', '-sEXPORTED_FUNCTIONS=_int_sqrt', '-sEXPORTED_RUNTIME_METHODS=ccall,cwrap'])
+
+  @parameterized({
+    '': ([],),
+    'O2': (['-O2'],),
+  })
+  def test_es5_transpile(self, args):
+    self.emcc_args += args
+
+    # Create a library file that uses the following ES6 features
+    # - let/const
+    # - arrow funcs
+    # - for..of
+    # - object.assign
+    create_file('es6_library.js', '''\
+    mergeInto(LibraryManager.library, {
+      foo: function() {
+        // Object.assign + let
+        let obj = Object.assign({}, {prop:1});
+        err('prop: ' + obj.prop);
+
+        // arror funcs + const
+        const bar = () => 2;
+        err('bar: ' + bar());
+      }
+    });
+    ''')
+    create_file('test.c', 'extern void foo(); int main() { foo(); }')
+    self.emcc_args += ['--js-library', 'es6_library.js']
+    self.uses_es6 = True
+
+    def check_for_es6(filename, expect):
+      js = read_file(filename)
+      if expect:
+        self.assertContained(['() => 2', '()=>2'], js)
+        self.assertContained('const ', js)
+        self.assertContained('let ', js)
+      else:
+        self.verify_es5(filename)
+        self.assertNotContained('() => 2', js)
+        self.assertNotContained('()=>2', js)
+        self.assertNotContained('const ', js)
+        self.assertNotContained('let ', js)
+
+    # Check that under normal circumstances none of these features get
+    # removed / transpiled.
+    print('base case')
+    self.do_runf('test.c', 'prop: 1\nbar: 2\n')
+    check_for_es6('test.js', True)
+
+    # If we select and older browser than closure will kick in by default
+    # to traspile.
+    print('with old browser')
+    self.emcc_args.remove('-Werror')
+    self.set_setting('MIN_CHROME_VERSION', '10')
+    self.do_runf('test.c', 'prop: 1\nbar: 2\n', output_basename='test2')
+    check_for_es6('test2.js', False)
+
+    # If we add `--closure=0` that traspiler (closure) is not run at all
+    print('with old browser + --closure=0')
+    self.do_runf('test.c', 'prop: 1\nbar: 2\n', emcc_args=['--closure=0'], output_basename='test3')
+    check_for_es6('test3.js', True)
+
+    # If we use `--closure=1` closure will run in full optimization mode
+    # and also transpile to ES5
+    print('with old browser + --closure=1')
+    self.do_runf('test.c', 'prop: 1\nbar: 2\n', emcc_args=['--closure=1'], output_basename='test4')
+    check_for_es6('test4.js', False)
+
+  def test_gmtime_noleak(self):
+    # Confirm that gmtime_r does not leak when called in isolation.
+    self.emcc_args.append('-fsanitize=leak')
+    self.do_other_test('test_gmtime_noleak.c')
+
+  def test_build_fetch_examples(self):
+    # We can't run these outside of the browser, but at least we can
+    # make sure they build.
+    self.set_setting('FETCH')
+    self.build(test_file('fetch/example_async_xhr_to_memory.c'))
+    self.build(test_file('fetch/example_async_xhr_to_memory_via_indexeddb.c'))
+    self.build(test_file('fetch/example_idb_delete.c'))
+    self.build(test_file('fetch/example_idb_store.c'))
+    self.build(test_file('fetch/example_stream_async_xhr.c'))
+    self.build(test_file('fetch/example_synchronous_fetch.c'))
+    self.build(test_file('fetch/example_sync_xhr_to_memory.c'))
+    self.build(test_file('fetch/example_waitable_xhr_to_memory.c'))
+    self.build(test_file('fetch/example_xhr_progress.c'))
+
+  # Test that using llvm-nm works when response files are in use, and inputs are linked using relative paths.
+  # llvm-nm has a quirk that it does not remove escape chars when printing out filenames.
+  @with_env_modify({'EM_FORCE_RESPONSE_FILES': '1'})
+  def test_llvm_nm_relative_paths_works_with_response_files(self):
+    os.mkdir('foo')
+    # Test creating a library file with a relative path in a subdir, so it gets a double backslash "\\" in the generated llvm-nm output.
+    # Also add a space to stress space escaping, e.g. "\ ".
+    create_file(os.path.join('foo', 'foo bar.c'), r'''
+      #include <time.h>
+      #include <stdint.h>
+      time_t foo()
+      {
+        int64_t secondsSinceEpoch = 0;
+        struct tm* utcTime = gmtime((time_t*)&secondsSinceEpoch);
+        return mktime(utcTime);
+      }
+    ''')
+    create_file('main.c', r'''
+      #include <stdio.h>
+      #include <time.h>
+      time_t foo(void);
+      int main()
+      {
+        printf("%d\n", (int)foo());
+      }
+    ''')
+    self.run_process([EMCC, 'main.c', os.path.join('foo', 'foo bar.c')])
