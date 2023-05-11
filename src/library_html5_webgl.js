@@ -25,7 +25,7 @@ var LibraryHtml5WebGL = {
 #if ASSERTIONS
     assert(attributes);
 #endif
-    var a = attributes >> 2;
+    var a = {{{ ptrToIdx('attributes', 2) }}};
     for (var i = 0; i < ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.__size__ }}}>>2); ++i) {
       HEAP32[a+i] = 0;
     }
@@ -81,7 +81,7 @@ var LibraryHtml5WebGL = {
 #if ASSERTIONS
     assert(attributes);
 #endif
-    var a = attributes >> 2;
+    var a = {{{ ptrToIdx('attributes', 2) }}};
     var powerPreference = HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.powerPreference }}}>>2)];
     var contextAttributes = {
       'alpha': !!HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.alpha }}}>>2)],

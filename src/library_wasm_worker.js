@@ -274,13 +274,13 @@ Atomics['waitAsync'] = function(i32a, index, value, maxWaitMilliseconds) {
 
   emscripten_atomic_wait_async__deps: ['$atomicWaitStates', '$atomicLiveWaitAsyncs', '$atomicLiveWaitAsyncsCounter', '$jstoi_q'],
   emscripten_atomic_wait_async: function(addr, val, asyncWaitFinished, userData, maxWaitMilliseconds) {
-    let wait = Atomics['waitAsync'](HEAP32, addr >> 2, val, maxWaitMilliseconds);
+    let wait = Atomics['waitAsync'](HEAP32, {{{ ptrToIdx('addr', 2) }}}, val, maxWaitMilliseconds);
     if (!wait.async) return atomicWaitStates.indexOf(wait.value);
     // Increment waitAsync generation counter, account for wraparound in case application does huge amounts of waitAsyncs per second (not sure if possible?)
     // Valid counterrange: 0...2^31-1
     let counter = atomicLiveWaitAsyncsCounter;
     atomicLiveWaitAsyncsCounter = Math.max(0, (atomicLiveWaitAsyncsCounter+1)|0);
-    atomicLiveWaitAsyncs[counter] = addr >> 2;
+    atomicLiveWaitAsyncs[counter] = {{{ ptrToIdx('addr', 2) }}};
     wait.value.then((value) => {
       if (atomicLiveWaitAsyncs[counter]) {
         delete atomicLiveWaitAsyncs[counter];
@@ -353,9 +353,9 @@ Atomics['waitAsync'] = function(i32a, index, value, maxWaitMilliseconds) {
     };
     let tryAcquireLock = () => {
       do {
-        var val = Atomics.compareExchange(HEAP32, lock >> 2, 0/*zero represents lock being free*/, 1/*one represents lock being acquired*/);
+        var val = Atomics.compareExchange(HEAP32, {{{ ptrToIdx('lock', 2) }}}, 0/*zero represents lock being free*/, 1/*one represents lock being acquired*/);
         if (!val) return dispatch(0, 0/*'ok'*/);
-        var wait = Atomics['waitAsync'](HEAP32, lock >> 2, val, maxWaitMilliseconds);
+        var wait = Atomics['waitAsync'](HEAP32, {{{ ptrToIdx('lock', 2) }}}, val, maxWaitMilliseconds);
       } while(wait.value === 'not-equal');
 #if ASSERTIONS
       assert(wait.async || wait.value === 'timed-out');
@@ -375,12 +375,12 @@ Atomics['waitAsync'] = function(i32a, index, value, maxWaitMilliseconds) {
     let tryAcquireSemaphore = () => {
       let val = num;
       do {
-        let ret = Atomics.compareExchange(HEAP32, sem >> 2,
+        let ret = Atomics.compareExchange(HEAP32, {{{ ptrToIdx('sem', 2) }}},
                                           val, /* We expect this many semaphore resoures to be available*/
                                           val - num /* Acquire 'num' of them */);
         if (ret == val) return dispatch(ret/*index of resource acquired*/, 0/*'ok'*/);
         val = ret;
-        let wait = Atomics['waitAsync'](HEAP32, sem >> 2, ret, maxWaitMilliseconds);
+        let wait = Atomics['waitAsync'](HEAP32, {{{ ptrToIdx('sem', 2) }}}, ret, maxWaitMilliseconds);
       } while(wait.value === 'not-equal');
 #if ASSERTIONS
       assert(wait.async || wait.value === 'timed-out');

@@ -244,7 +244,7 @@ var LibraryExceptions = {
   // We'll do that here, instead, to keep things simpler.
   __cxa_find_matching_catch__deps: ['$exceptionLast', '$ExceptionInfo', '__resumeException', '__cxa_can_catch', 'setTempRet0'],
   __cxa_find_matching_catch: function() {
-    // Here we use explicit calls to `from64`/`to64` rather then using the
+    // Here we use explicit calls to `ptrToIdx`/`idxToPtr` rather then using the
     // `__sig` attribute to perform these automatically.  This is because the
     // `__sig` wrapper uses arrow function notation, which is not compatible
     // with the use of `arguments` in this function.
@@ -257,7 +257,7 @@ var LibraryExceptions = {
     if (!thrown) {
       // just pass through the null ptr
       setTempRet0(0);
-      return {{{ to64(0) }}};
+      return {{{ idxToPtr(0) }}};
     }
     var info = new ExceptionInfo(thrown);
     info.set_adjusted_ptr(thrown);
@@ -265,7 +265,7 @@ var LibraryExceptions = {
     if (!thrownType) {
       // just pass through the thrown ptr
       setTempRet0(0);
-      return {{{ to64('thrown') }}};
+      return {{{ idxToPtr('thrown') }}};
     }
 
     // can_catch receives a **, add indirection
@@ -277,8 +277,7 @@ var LibraryExceptions = {
     // type of the thrown object. Find one which matches, and
     // return the type of the catch block which should be called.
     for (var i = 0; i < arguments.length; i++) {
-      var caughtType = arguments[i];
-      {{{ from64('caughtType') }}};
+      var caughtType = {{{ ptrToIdx('arguments[i]') }}};
 
       if (caughtType === 0 || caughtType === thrownType) {
         // Catch all clause matched or exactly the same type is caught
@@ -290,11 +289,11 @@ var LibraryExceptions = {
         dbg("  __cxa_find_matching_catch found " + [ptrToString(info.get_adjusted_ptr()), caughtType]);
 #endif
         setTempRet0(caughtType);
-        return {{{ to64('thrown') }}};
+        return {{{ idxToPtr('thrown') }}};
       }
     }
     setTempRet0(thrownType);
-    return {{{ to64('thrown') }}};
+    return {{{ idxToPtr('thrown') }}};
   },
 
   __resumeException__deps: ['$exceptionLast'],
@@ -316,7 +315,7 @@ var LibraryExceptions = {
     return withStackSave(function() {
       var type_addr_addr = stackAlloc({{{ POINTER_SIZE }}});
       var message_addr_addr = stackAlloc({{{ POINTER_SIZE }}});
-      ___get_exception_message({{{ to64('ptr') }}}, {{{ to64('type_addr_addr') }}}, {{{ to64('message_addr_addr') }}});
+      ___get_exception_message({{{ idxToPtr('ptr') }}}, {{{ idxToPtr('type_addr_addr') }}}, {{{ idxToPtr('message_addr_addr') }}});
       var type_addr = {{{ makeGetValue('type_addr_addr', 0, '*') }}};
       var message_addr = {{{ makeGetValue('message_addr_addr', 0, '*') }}};
       var type = UTF8ToString(type_addr);

@@ -2577,10 +2577,10 @@ mergeInto(LibraryManager.library, {
 
   emscripten_get_callstack__deps: ['$getCallstack', '$lengthBytesUTF8', '$stringToUTF8'],
   emscripten_get_callstack: function(flags, str, maxbytes) {
-    // Use explicit calls to from64 rather then using the __sig
+    // Use explicit calls to convertPtrToIdx() rather than using the __sig
     // magic here.  This is because the __sig wrapper uses arrow function
     // notation which causes the inner call to traverseStack to fail.
-    {{{ from64('str') }}};
+    {{{ convertPtrToIdx('str') }}};
     var callstack = getCallstack(flags);
     // User can query the required amount of bytes to hold the callstack.
     if (!str || maxbytes <= 0) {
@@ -3301,6 +3301,9 @@ mergeInto(LibraryManager.library, {
     // https://github.com/emscripten-core/emscripten/issues/18200
     funcPtr = Number(funcPtr);
 #endif
+#if ASSERTIONS
+    assert(funcPtr >= 0, "Function pointers must be nonnegative!");
+#endif
     var func = wasmTableMirror[funcPtr];
     if (!func) {
       if (funcPtr >= wasmTableMirror.length) wasmTableMirror.length = funcPtr + 1;
@@ -3323,6 +3326,9 @@ mergeInto(LibraryManager.library, {
     // Function pointers are 64-bit, but wasmTable.get() requires a Number.
     // https://github.com/emscripten-core/emscripten/issues/18200
     funcPtr = Number(funcPtr);
+#endif
+#if ASSERTIONS
+    assert(funcPtr >= 0, "Function pointers must be nonnegative!");
 #endif
     // In -Os and -Oz builds, do not implement a JS side wasm table mirror for small
     // code size, but directly access wasmTable, which is a bit slower as uncached.
@@ -3598,11 +3604,11 @@ mergeInto(LibraryManager.library, {
 #if RELOCATABLE
   // Globals that are normally exported from the wasm module but in relocatable
   // mode are created here and imported by the module.
-  __stack_pointer: "new WebAssembly.Global({'value': '{{{ POINTER_WASM_TYPE }}}', 'mutable': true}, {{{ to64(STACK_HIGH) }}})",
+  __stack_pointer: "new WebAssembly.Global({'value': '{{{ POINTER_WASM_TYPE }}}', 'mutable': true}, {{{ idxToPtr(STACK_HIGH) }}})",
   // tell the memory segments where to place themselves
-  __memory_base: "new WebAssembly.Global({'value': '{{{ POINTER_WASM_TYPE }}}', 'mutable': false}, {{{ to64(GLOBAL_BASE) }}})",
+  __memory_base: "new WebAssembly.Global({'value': '{{{ POINTER_WASM_TYPE }}}', 'mutable': false}, {{{ idxToPtr(GLOBAL_BASE) }}})",
   // the wasm backend reserves slot 0 for the NULL function pointer
-  __table_base: "new WebAssembly.Global({'value': '{{{ POINTER_WASM_TYPE }}}', 'mutable': false}, {{{ to64(1) }}})",
+  __table_base: "new WebAssembly.Global({'value': '{{{ POINTER_WASM_TYPE }}}', 'mutable': false}, {{{ idxToPtr(1) }}})",
 #if MEMORY64 == 2
   __memory_base32: "new WebAssembly.Global({'value': 'i32', 'mutable': false}, {{{ GLOBAL_BASE }}})",
 #endif

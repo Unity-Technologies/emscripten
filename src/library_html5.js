@@ -260,6 +260,8 @@ var LibraryHTML5 = {
 #else
       var keyEventData = JSEvents.keyEvent;
 #endif
+      {{{ convertPtrToIdx('keyEventData') }}};
+
       {{{ makeSetValue('keyEventData', C_STRUCTS.EmscriptenKeyboardEvent.timestamp, 'e.timeStamp', 'double') }}};
 
       var idx = keyEventData >> 2;
