@@ -32,10 +32,6 @@ if output_file != None:
   if len(json_files) > 0:
     print('emar.py: Merging ' + str(len(json_files)) + ' call graph JSON files to output file ' + output_file + '.callgraph.json')
     building.merge_call_graph_jsons(output_file + '.callgraph.json', json_files)
-  else:
-    print('emar.py: No input callgraph JSON files to generate ' + output_file + '.callgraph.json')
-else:
-  print('emar.py: Could not detect output file from ' + str(args))
 
 cmd = [shared.LLVM_AR] + sys.argv[1:]
 sys.exit(shared.run_process(cmd, stdin=sys.stdin, check=False).returncode)
