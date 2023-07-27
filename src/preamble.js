@@ -944,7 +944,7 @@ function instantiateAsync(binary, binaryFile, imports, callback) {
 function createWasm() {
 #if EMIT_SYMBOL_GRAPH_JSON
   // Install the code coverage execution handler.
-  asmLibraryArg['log_execution'] = COV_log_execution;
+  wasmImports['log_execution'] = COV_log_execution;
 #endif
 
   // prepare imports
