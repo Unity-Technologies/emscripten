@@ -67,13 +67,27 @@ def extract_arg(optname):
       args = args[:i] + args[i+2:]
       return output
 
+def extract_bool_arg(optname):
+  global args
+  for i in range(len(args)):
+    if args[i] == optname:
+      args = args[:i] + args[i+1:]
+      return True
+  return False
+
 out_json_filename = extract_arg('-o')
 wasm_output_name = extract_arg('--wasm')
+verbose = extract_bool_arg('-v')
 
 wasm_module_function_sizes = None
 
 export_names = set()
 import_names = set()
+
+def debug_log(message):
+  global verbose
+  if verbose:
+    print(message)
 
 if wasm_output_name:
   wasm_module_function_sizes = {}
@@ -90,24 +104,24 @@ if wasm_output_name:
   # Find all imports and exports
   cur_script_dir = os.path.dirname(os.path.realpath(__file__))
   cmd = config.NODE_JS + [os.path.join(cur_script_dir, 'tools', 'size_report', 'size_report.js'), '--json', wasm_output_name]
-  print(' '.join(cmd))
+  debug_log(' '.join(cmd))
   size_report_json = subprocess.check_output(cmd).decode('utf-8')
-  print(str(size_report_json))
+  debug_log(str(size_report_json))
   size_report_json = json.loads(size_report_json)
 
   for e in size_report_json:
     if e['type'] == 'import': import_names.add(e['name'])
     if e['type'] == 'export': export_names.add(e['name'])
 
-  print('IMPORTS: ' + str(import_names))
-  print('EXPORTS: ' + str(export_names))
-  print('IMPLEMENTED FUNCTIONS: ' + str(wasm_module_function_sizes))
+  debug_log('IMPORTS: ' + str(import_names))
+  debug_log('EXPORTS: ' + str(export_names))
+  debug_log('IMPLEMENTED FUNCTIONS: ' + str(wasm_module_function_sizes))
 
-print('Merging ' + str(len(args)) + ' call graphs into one output: ' + out_json_filename)
+debug_log('Merging ' + str(len(args)) + ' call graphs into one output: ' + out_json_filename)
 
 graphs = []
 for i in args:
-  print('Loading input callgraph JSON ' + i)
+  debug_log('Loading input callgraph JSON ' + i)
   graphs += [json.load(open(i))]
 
 filenames = {'': 0}
@@ -136,7 +150,7 @@ for g in graphs:
   g_function_names = g['functionNames']
   g_filenames = g['filenames']
   for f in g['functions']:
-#    print(str(f))
+#    debug_log(str(f))
     name = g_function_names[f['n']]
     # Special name demangling that Binaryen pass does for 'main':
     if name == '__main_argc_argv':
@@ -175,11 +189,11 @@ for g in graphs:
       'n': name_number
     }
     if name in import_names:
-      print(name + ' IS AN IMPORT')
+      debug_log(name + ' IS AN IMPORT')
       function['import'] = 1
 
     if name in export_names:
-      print(name + ' IS AN EXPORT')
+      debug_log(name + ' IS AN EXPORT')
       function['export'] = 1
     if size: function['s'] = size
     if filename_number: function['f'] = filename_number
@@ -210,7 +224,7 @@ for f in functions:
   if f['n'] not in called_functions:
     f['r'] = 1
     if 'export' not in f:
-      print('Function "' + function_names_array[f['n']] + '" from file ' + (filenames_array[f['f']] if 'f' in f else 'UNKNOWN') + ' is an unexpected ROOT')
+      debug_log('Function "' + function_names_array[f['n']] + '" from file ' + (filenames_array[f['f']] if 'f' in f else 'UNKNOWN') + ' is an unexpected ROOT')
 
 output_json = {
   'functionNames': function_names_array,
@@ -227,6 +241,6 @@ def is_function_implemented(funcname):
 if wasm_module_function_sizes is not None:
   for key in wasm_module_function_sizes:
     if not is_function_implemented(key):
-      print('WARNING: Function ' + key + ' that is present in the .wasm file somehow did not make its way to the callgraph JSON!')
+      debug_log('WARNING: Function ' + key + ' that is present in the .wasm file somehow did not make its way to the callgraph JSON!')
 
 open(out_json_filename, 'w').write(json.dumps(output_json))
