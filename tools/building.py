@@ -1164,6 +1164,8 @@ def merge_call_graph_jsons(output, inputs, wasm_output_file=None):
          '-o',  output]
   if wasm_output_file:
     cmd += ['--wasm', wasm_output_file]
+  if settings.VERBOSE:
+    cmd += ['-v']
   rsp = response_file.create_response_file(inputs, shared.TEMP_DIR)
   check_call(cmd + ['@' + rsp])
 
