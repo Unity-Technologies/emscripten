@@ -1955,7 +1955,7 @@ def phase_link(linker_args, wasm_target, js_syms):
           link_dirs += [f[2:]]
       return link_dirs
 
-    link_dirs = get_link_directories(linker_arguments)
+    link_dirs = get_link_directories(linker_args)
 
     def find_lib(lib):
       for d in link_dirs:
@@ -1964,7 +1964,7 @@ def phase_link(linker_args, wasm_target, js_syms):
           return c
 
     cg = []
-    for arg in linker_arguments:
+    for arg in linker_args:
       f = None
       if arg.startswith('-l'):
         lib = find_lib(arg[2:])
