@@ -97,6 +97,7 @@ COMPILE_TIME_SETTINGS = {
     'WASM_WORKERS',
 
     # Internal settings used during compilation
+    'EMIT_SYMBOL_GRAPH_JSON',
     'EXCEPTION_CATCHING_ALLOWED',
     'WASM_EXCEPTIONS',
     'LTO',

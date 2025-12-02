@@ -503,6 +503,10 @@ def phase_compile_inputs(options, state, newargs):
       cmd = get_clang_command_asm() + newargs
     else:
       cmd = get_clang_command() + newargs
+
+    if settings.EMIT_SYMBOL_GRAPH_JSON:
+      cmd += ['-mllvm', f'--emit-symbol-graph-json={options.output_file}.callgraph.json']
+
     shared.exec_process(cmd)
     assert False, 'exec_process should not return'
 
